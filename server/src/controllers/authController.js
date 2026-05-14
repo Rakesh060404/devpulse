@@ -37,6 +37,9 @@ export const githubCallback = async (req, res) => {
             {
                 id: userId,
                 github_id: githubId,
+                username,
+                email,
+                avatarUrl,
             },
             process.env.JWT_SECRET,
             {
@@ -45,7 +48,7 @@ export const githubCallback = async (req, res) => {
         );
 
         // Redirect to frontend with token
-        res.redirect(`http://localhost:3001/dashboard?token=${token}`);
+        res.redirect(`http://localhost:3000/dashboard?token=${token}`);
     } catch (error) {
         console.error(error);
 

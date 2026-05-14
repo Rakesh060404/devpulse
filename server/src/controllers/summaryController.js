@@ -30,7 +30,7 @@ export const generateSummary = async (req, res) => {
         console.error(error);
 
         res.status(500).json({
-            error: 'Failed to generate AI summary',
+            error: error.message || 'Failed to generate AI summary',
         });
     }
 };

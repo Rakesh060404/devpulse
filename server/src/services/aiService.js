@@ -26,7 +26,7 @@ export const generateWeeklySummary = async (repoId) => {
 
         // Fetch commits for the week
         const [commits] = await pool.query(
-            'SELECT COUNT(*) as count, author, SUM(1) as contributions FROM commits WHERE repo_id = ? AND date >= ? AND date <= ? GROUP BY author ORDER BY contributions DESC',
+            'SELECT COUNT(*) as count, author, SUM(1) as contributions FROM commits WHERE repo_id = ? AND committed_at >= ? AND committed_at <= ? GROUP BY author ORDER BY contributions DESC',
             [repoId, startDate, endDate]
         );
 
@@ -68,23 +68,34 @@ export const generateWeeklySummary = async (repoId) => {
         const prompt = buildSummaryPrompt(analytics);
 
         // Generate summary with OpenAI
-        const completion = await openai.chat.completions.create({
-            model: 'gpt-4',
-            messages: [
-                {
-                    role: 'system',
-                    content: 'You are an expert engineering analyst creating weekly development summaries. Write in a professional, insightful tone like a senior engineering manager. Focus on productivity, collaboration, and development patterns.',
-                },
-                {
-                    role: 'user',
-                    content: prompt,
-                },
-            ],
-            max_tokens: 1000,
-            temperature: 0.7,
-        });
+        const openAiModel = process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
+        let summary;
+        let openAiError;
 
-        const summary = completion.choices[0].message.content.trim();
+        try {
+            const completion = await attemptOpenAiCompletion(openAiModel, prompt);
+            summary = completion.choices[0]?.message?.content?.trim();
+
+            if (!summary) {
+                throw new Error('OpenAI returned no summary text');
+            }
+        } catch (error) {
+            openAiError = error;
+
+            if (error.code === 'model_not_found' && openAiModel !== 'gpt-3.5-turbo') {
+                try {
+                    const completion = await attemptOpenAiCompletion('gpt-3.5-turbo', prompt);
+                    summary = completion.choices[0]?.message?.content?.trim();
+                } catch (retryError) {
+                    openAiError = retryError;
+                }
+            }
+        }
+
+        if (!summary) {
+            console.warn('OpenAI summary generation failed; using fallback summary.', openAiError);
+            summary = buildFallbackSummary(analytics, openAiError);
+        }
 
         // Store summary in database
         const [result] = await pool.query(
@@ -94,15 +105,48 @@ export const generateWeeklySummary = async (repoId) => {
 
         return {
             id: result.insertId,
-            summary,
+            repo_id: repoId,
+            summary_text: summary,
+            generated_at: new Date(),
+            week_start: startDate,
+            week_end: endDate,
             analytics,
-            generatedAt: new Date(),
         };
 
     } catch (error) {
         console.error('AI Summary generation failed:', error);
-        throw new Error('Failed to generate AI summary');
+        throw new Error(error.message || 'Failed to generate AI summary');
     }
+};
+
+const attemptOpenAiCompletion = async (model, prompt) => {
+    return openai.chat.completions.create({
+        model,
+        messages: [
+            {
+                role: 'system',
+                content: 'You are an expert engineering analyst creating weekly development summaries. Write in a professional, insightful tone like a senior engineering manager. Focus on productivity, collaboration, and development patterns.',
+            },
+            {
+                role: 'user',
+                content: prompt,
+            },
+        ],
+        max_tokens: 1000,
+        temperature: 0.7,
+    });
+};
+
+const buildFallbackSummary = (analytics, error) => {
+    const reason = error?.code ? ` (${error.code})` : '';
+
+    return `Automated weekly summary${reason}:
+
+Over the period ${analytics.period.start} to ${analytics.period.end}, the ${analytics.repoName} repository maintained steady activity. The team completed ${analytics.commits.total} commits, led by ${analytics.commits.topContributors.length > 0 ? analytics.commits.topContributors.map(c => c.author).join(', ') : 'contributors'}.
+
+Pull request activity included ${analytics.prs.total} total PRs with ${analytics.prs.merged} merges and an average review time of ${analytics.prs.avgReviewTime ? `${analytics.prs.avgReviewTime} minutes` : 'N/A'}. Code changes for the week totaled +${analytics.changes.additions} additions and -${analytics.changes.deletions} deletions.
+
+This summary reflects development momentum, collaboration patterns, and review throughput based on available repository analytics.`;
 };
 
 const buildSummaryPrompt = (analytics) => {

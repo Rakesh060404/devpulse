@@ -32,7 +32,11 @@ const RepoCard = ({ repo, onTrack, onSync, isTracked }) => {
             <div className="flex items-center space-x-4 text-sm text-gray-400">
                 <span>⭐ {repo.stargazers_count || 0}</span>
                 <span>🍴 {repo.forks_count || 0}</span>
-                <span>📅 {new Date(repo.updated_at).toLocaleDateString()}</span>
+                <span>
+                    📅 {repo.updated_at || repo.tracked_at || repo.created_at
+                        ? new Date(repo.updated_at || repo.tracked_at || repo.created_at).toLocaleDateString()
+                        : 'N/A'}
+                </span>
             </div>
         </div>
     );

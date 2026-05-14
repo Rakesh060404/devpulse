@@ -5,7 +5,6 @@ services:
       - "5000:5000"
     volumes:
       - ./server:/app
-      - /app/node_modules
     depends_on:
       - mysql
     command: npm run dev

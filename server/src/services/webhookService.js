@@ -111,7 +111,7 @@ export const processPushEvent = async (payload) => {
 
         if (commitData.length > 0) {
             await pool.query(
-                `INSERT INTO commits (repo_id, sha, message, author, date) VALUES ?
+                `INSERT INTO commits (repo_id, sha, message, author, committed_at) VALUES ?
                  ON DUPLICATE KEY UPDATE sha = sha`,
                 [commitData]
             );
