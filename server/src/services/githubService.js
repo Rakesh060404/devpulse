@@ -63,3 +63,22 @@ export const fetchRepoPRs = async (accessToken, owner, repo, state = 'all', page
         throw new Error("Failed to fetch pull requests");
     }
 };
+
+export const fetchRepoMetadata = async (accessToken, owner, repo) => {
+    try {
+        const response = await axios.get(
+            `https://api.github.com/repos/${owner}/${repo}`,
+            {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                },
+            }
+        );
+
+        return response.data;
+    } catch (error) {
+        console.error(error);
+
+        throw new Error("Failed to fetch repository metadata");
+    }
+};

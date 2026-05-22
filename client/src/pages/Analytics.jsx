@@ -118,8 +118,19 @@ const Analytics = () => {
                         </div>
 
                         {error && (
-                            <div className="bg-red-700/20 border border-red-600 text-red-100 rounded-lg p-4">
-                                {error}
+                            <div className="bg-red-700/20 border border-red-600 text-red-100 rounded-lg p-4 flex items-start justify-between">
+                                <span>{error}</span>
+                                <button
+                                    onClick={() => {
+                                        setError(null);
+                                        if (selectedRepo) {
+                                            fetchSummaries(selectedRepo.id);
+                                        }
+                                    }}
+                                    className="text-red-200 hover:text-red-100 font-semibold ml-4 whitespace-nowrap"
+                                >
+                                    Retry
+                                </button>
                             </div>
                         )}
 

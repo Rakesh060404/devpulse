@@ -96,12 +96,12 @@ const RepositoryAnalytics = () => {
                 <div className="bg-gray-800 rounded-lg p-6">
                     <div className="flex items-start justify-between">
                         <div>
-                            <h1 className="text-3xl font-bold text-white mb-2">{repo.name}</h1>
-                            <p className="text-gray-400 mb-4">{repo.description}</p>
+                            <h1 className="text-3xl font-bold text-white mb-2">{repo?.name || 'Repository'}</h1>
+                            <p className="text-gray-400 mb-4">{repo?.description || 'No description'}</p>
                             <div className="flex items-center space-x-6 text-sm text-gray-400">
-                                <span>⭐ {repo.stars} stars</span>
-                                <span>🍴 {repo.forks} forks</span>
-                                <span>💻 {repo.language}</span>
+                                <span>⭐ {repo?.stargazers_count || 0} stars</span>
+                                <span>🍴 {repo?.forks_count || 0} forks</span>
+                                <span>💻 {repo?.language || 'Unknown'}</span>
                             </div>
                         </div>
                         <div className="flex space-x-3">

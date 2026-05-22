@@ -9,7 +9,17 @@ const Dashboard = () => {
     const { user, setUser, logout } = useContext(AuthContext);
     const [repos, setRepos] = useState([]);
     const [trackedRepos, setTrackedRepos] = useState([]);
+    const [stats, setStats] = useState({
+        trackedReposCount: 0,
+        totalCommitsAllTime: 0,
+        totalCommitsThisWeek: 0,
+        totalPRsOpen: 0,
+        totalPRsMergedAllTime: 0,
+        activeDaysThisMonth: 0,
+        productivityTrendPercent: 0,
+    });
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
         // Check for token in URL params (from OAuth redirect)
@@ -21,11 +31,36 @@ const Dashboard = () => {
             window.history.replaceState({}, document.title, '/dashboard');
             // Verify and set user
             verifyToken(token);
+        } else {
+            // Token already in localStorage or missing, proceed with fetching
+            initializeDashboard();
         }
-
-        fetchRepos();
-        fetchTrackedRepos();
     }, []);
+
+    // Set up polling for real-time updates every 30 seconds
+    useEffect(() => {
+        if (loading) return; // Don't poll while initial load is in progress
+
+        const pollInterval = setInterval(() => {
+            fetchStats();
+            fetchTrackedRepos();
+        }, 30000); // 30 seconds
+
+        return () => clearInterval(pollInterval); // Cleanup on unmount
+    }, [loading]);
+
+    const initializeDashboard = async () => {
+        try {
+            await fetchRepos();
+            await fetchTrackedRepos();
+            await fetchStats();
+        } catch (err) {
+            console.error('Failed to initialize dashboard:', err);
+            setError('Failed to load dashboard data');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const verifyToken = async (token) => {
         try {
@@ -38,9 +73,16 @@ const Dashboard = () => {
             if (response.ok) {
                 const data = await response.json();
                 setUser(data.user);
+                // After user is set, initialize dashboard
+                setTimeout(() => initializeDashboard(), 100);
+            } else {
+                localStorage.removeItem('token');
+                setLoading(false);
             }
         } catch (error) {
             console.error('Token verification failed:', error);
+            localStorage.removeItem('token');
+            setLoading(false);
         }
     };
     const fetchRepos = async () => {
@@ -49,6 +91,7 @@ const Dashboard = () => {
             setRepos(response.data);
         } catch (error) {
             console.error('Failed to fetch repos:', error);
+            setError('Failed to load repositories');
         }
     };
 
@@ -58,8 +101,18 @@ const Dashboard = () => {
             setTrackedRepos(response.data);
         } catch (error) {
             console.error('Failed to fetch tracked repos:', error);
-        } finally {
-            setLoading(false);
+            setError('Failed to load tracked repositories');
+        }
+    };
+
+    const fetchStats = async () => {
+        try {
+            const response = await axios.get('/api/stats/dashboard');
+            setStats(response.data);
+        } catch (error) {
+            console.error('Failed to fetch stats:', error);
+            setError('Failed to load statistics');
+            // Keep stats as-is (zeros) on error
         }
     };
 
@@ -90,7 +143,7 @@ const Dashboard = () => {
     if (loading) {
         return (
             <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-                <div className="text-white text-xl">Loading...</div>
+                <div className="text-white text-xl">Loading dashboard...</div>
             </div>
         );
     }
@@ -100,34 +153,41 @@ const Dashboard = () => {
             <div className="space-y-8">
                 {/* Welcome Section */}
                 <div>
-                    <h1 className="text-3xl font-bold text-white mb-2">Welcome back, {user?.username}!</h1>
+                    <h1 className="text-3xl font-bold text-white mb-2">Welcome back, {user?.username || 'Developer'}!</h1>
                     <p className="text-gray-400">Here's an overview of your development activity</p>
                 </div>
+
+                {/* Error Message */}
+                {error && (
+                    <div className="bg-red-900 border border-red-700 rounded-lg p-4">
+                        <p className="text-red-100">{error}</p>
+                    </div>
+                )}
 
                 {/* Stats Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <StatsCard
                         title="Tracked Repos"
-                        value={trackedRepos.length}
-                        change={12}
+                        value={stats.trackedReposCount.toLocaleString()}
+                        change={0}
                         icon="📁"
                     />
                     <StatsCard
                         title="Total Commits"
-                        value="1,234"
-                        change={8}
+                        value={stats.totalCommitsAllTime.toLocaleString()}
+                        change={Math.round((stats.totalCommitsThisWeek / (stats.totalCommitsAllTime || 1)) * 100)}
                         icon="💻"
                     />
                     <StatsCard
                         title="Active Days"
-                        value="28"
+                        value={stats.activeDaysThisMonth.toString()}
                         change={15}
                         icon="📅"
                     />
                     <StatsCard
-                        title="Productivity Score"
-                        value="87%"
-                        change={5}
+                        title="Productivity Trend"
+                        value={`${stats.productivityTrendPercent >= 0 ? '+' : ''}${stats.productivityTrendPercent}%`}
+                        change={stats.productivityTrendPercent}
                         icon="🚀"
                     />
                 </div>

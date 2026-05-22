@@ -15,8 +15,8 @@ export const handleGitHubWebhook = async (req, res) => {
         const eventType = req.headers['x-github-event'];
         const deliveryId = req.headers['x-github-delivery'];
 
-        // Get raw body for signature verification
-        const rawBody = JSON.stringify(req.body);
+        // Get raw body for signature verification (captured by middleware in app.js)
+        const rawBody = req.rawBody ? req.rawBody.toString() : JSON.stringify(req.body);
 
         // Verify webhook signature
         const isValidSignature = verifyWebhookSignature(

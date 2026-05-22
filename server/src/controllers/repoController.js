@@ -127,7 +127,34 @@ export const getRepo = async (req, res) => {
             });
         }
 
-        res.json(repos[0]);
+        const repo = repos[0];
+
+        // Fetch GitHub metadata
+        try {
+            const [users] = await pool.query(
+                "SELECT access_token FROM users WHERE id = ?",
+                [userId]
+            );
+
+            if (users.length > 0) {
+                const accessToken = users[0].access_token;
+                const [owner, repoName] = repo.full_name.split('/');
+
+                const githubRepo = await fetchGitHubRepoMetadata(accessToken, owner, repoName);
+
+                // Enrich repo with GitHub data
+                repo.stargazers_count = githubRepo.stargazers_count || 0;
+                repo.forks_count = githubRepo.forks_count || 0;
+                repo.language = githubRepo.language || null;
+                repo.watchers_count = githubRepo.watchers_count || 0;
+                repo.open_issues_count = githubRepo.open_issues_count || 0;
+            }
+        } catch (githubError) {
+            console.warn('Failed to fetch GitHub metadata for repo', repoId, githubError.message);
+            // Continue with basic repo data if GitHub fetch fails
+        }
+
+        res.json(repo);
 
     } catch (error) {
         console.error(error);
@@ -136,6 +163,14 @@ export const getRepo = async (req, res) => {
             error: "Failed to fetch repository",
         });
     }
+};
+
+/**
+ * Helper function to fetch repository metadata from GitHub
+ */
+const fetchGitHubRepoMetadata = async (accessToken, owner, repo) => {
+    const { fetchRepoMetadata } = await import("../services/githubService.js");
+    return fetchRepoMetadata(accessToken, owner, repo);
 };
 
 export const getTrackedRepos = async (req, res) => {

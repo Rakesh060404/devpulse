@@ -87,9 +87,10 @@ export const processPushEvent = async (payload) => {
     try {
         const { repository, commits, ref } = payload;
 
-        // Only process pushes to main/master branch
-        if (ref !== 'refs/heads/main' && ref !== 'refs/heads/master') {
-            return { processed: false, reason: 'Not main/master branch' };
+        // Process pushes to any branch (developers may work on feature branches)
+        // ref format: refs/heads/branch-name
+        if (!ref || !ref.startsWith('refs/heads/')) {
+            return { processed: false, reason: 'Not a branch push' };
         }
 
         // Find repository in our database
@@ -120,7 +121,8 @@ export const processPushEvent = async (payload) => {
         return {
             processed: true,
             commitsProcessed: commitData.length,
-            repoId
+            repoId,
+            branch: ref.replace('refs/heads/', '')
         };
 
     } catch (error) {

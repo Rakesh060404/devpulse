@@ -8,8 +8,8 @@ const Login = () => {
 
     const handleGitHubLogin = () => {
         setLoading(true);
-        // Redirect to backend GitHub OAuth
-        window.location.href = 'http://localhost:5000/api/auth/github';
+        // Use window.top.location.href to handle potential iframe issues
+        window.top.location.href = 'http://localhost:5000/api/auth/github';
     };
 
     return (

@@ -50,7 +50,7 @@ export const generateWeeklySummary = async (repoId) => {
                 end: endDate.toISOString().split('T')[0],
             },
             commits: {
-                total: commits.reduce((sum, c) => sum + c.contributions, 0),
+                total: commits.reduce((sum, c) => sum + (c.contributions || 0), 0),
                 topContributors: commits.slice(0, 5),
             },
             prs: {
@@ -68,7 +68,7 @@ export const generateWeeklySummary = async (repoId) => {
         const prompt = buildSummaryPrompt(analytics);
 
         // Generate summary with OpenAI
-        const openAiModel = process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
+        const openAiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
         let summary;
         let openAiError;
 
@@ -81,19 +81,34 @@ export const generateWeeklySummary = async (repoId) => {
             }
         } catch (error) {
             openAiError = error;
+            console.warn('OpenAI error:', { code: error?.error?.code, message: error.message });
 
-            if (error.code === 'model_not_found' && openAiModel !== 'gpt-3.5-turbo') {
+            // Try fallback models based on error type
+            if (isModelError(error) && openAiModel !== 'gpt-4o-mini') {
+                console.log('Model not found, trying gpt-4o-mini fallback...');
                 try {
-                    const completion = await attemptOpenAiCompletion('gpt-3.5-turbo', prompt);
+                    const completion = await attemptOpenAiCompletion('gpt-4o-mini', prompt);
                     summary = completion.choices[0]?.message?.content?.trim();
                 } catch (retryError) {
                     openAiError = retryError;
+                    console.warn('Fallback model also failed:', retryError.message);
                 }
+            }
+
+            // If still no summary, we'll use template
+            if (!summary && isQuotaError(error)) {
+                console.warn('OpenAI quota exceeded - using template');
+                openAiError = new Error('OpenAI quota exceeded');
+            }
+
+            if (!summary && isRateLimitError(error)) {
+                console.warn('OpenAI rate limited - using template');
+                openAiError = new Error('OpenAI rate limit exceeded');
             }
         }
 
         if (!summary) {
-            console.warn('OpenAI summary generation failed; using fallback summary.', openAiError);
+            console.warn('OpenAI summary generation failed; using fallback summary.', openAiError?.message);
             summary = buildFallbackSummary(analytics, openAiError);
         }
 
@@ -135,6 +150,25 @@ const attemptOpenAiCompletion = async (model, prompt) => {
         max_tokens: 1000,
         temperature: 0.7,
     });
+};
+
+const isRateLimitError = (error) => {
+    const errorCode = error?.error?.code || error?.code;
+    return errorCode === 'rate_limit_exceeded' ||
+        error?.status === 429 ||
+        (error?.message && error.message.includes('rate limit'));
+};
+
+const isQuotaError = (error) => {
+    const errorCode = error?.error?.code || error?.code;
+    return errorCode === 'insufficient_quota' ||
+        (error?.message && error.message.includes('quota'));
+};
+
+const isModelError = (error) => {
+    const errorCode = error?.error?.code || error?.code;
+    return errorCode === 'model_not_found' ||
+        (error?.message && error.message.includes('model'));
 };
 
 const buildFallbackSummary = (analytics, error) => {
