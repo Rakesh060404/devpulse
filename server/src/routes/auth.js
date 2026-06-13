@@ -13,11 +13,30 @@ router.get(
 
 router.get(
     "/github/callback",
-    passport.authenticate("github", {
-        session: false,
-        failureRedirect: "/login",
-    }),
-    githubCallback
+    (req, res, next) => {
+        passport.authenticate(
+            "github",
+            { session: false },
+            (err, user, info) => {
+                if (err) {
+                    console.error("Passport OAuth error:", err);
+                    return res.status(500).json({
+                        error: "Failed to obtain access token",
+                        details: err.message || err,
+                    });
+                }
+
+                if (!user) {
+                    return res.redirect(
+                        `${process.env.CLIENT_URL || "http://localhost:3000"}/login`
+                    );
+                }
+
+                req.user = user;
+                return githubCallback(req, res);
+            }
+        )(req, res, next);
+    }
 );
 
 export default router;

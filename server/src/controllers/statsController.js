@@ -1,36 +1,51 @@
 import pool from '../config/db.js';
 
 /**
- * Get aggregated dashboard statistics for authenticated user
  * GET /api/stats/dashboard
- * 
- * Returns:
- * - Total tracked repositories
- * - Total commits (all time & this week)
- * - Total PRs (open, merged, all time)
- * - Active days this month
- * - Productivity trends
+ * Dashboard analytics for authenticated user
  */
+
 export const getDashboardStats = async (req, res) => {
+
     try {
+
+        /**
+         * Validate authenticated user
+         */
+        if (!req.user || !req.user.id) {
+
+            return res.status(401).json({
+                error: 'Unauthorized',
+            });
+
+        }
+
         const userId = req.user.id;
 
-        // Get count of tracked repos
+        /**
+         * Get tracked repositories
+         */
         const [trackedRepos] = await pool.query(
-            'SELECT COUNT(*) as count FROM repositories WHERE user_id = ?',
+            `
+            SELECT id
+            FROM repositories
+            WHERE user_id = ?
+            `,
             [userId]
         );
-        const trackedReposCount = trackedRepos[0]?.count || 0;
 
-        // Get repo IDs for this user
-        const [userRepos] = await pool.query(
-            'SELECT id FROM repositories WHERE user_id = ?',
-            [userId]
+        /**
+         * Extract repository IDs
+         */
+        const repoIds = trackedRepos.map(
+            repo => parseInt(repo.id)
         );
-        const repoIds = userRepos.map(r => r.id);
 
+        /**
+         * No repositories tracked yet
+         */
         if (repoIds.length === 0) {
-            // No tracked repos - return zeros
+
             return res.json({
                 trackedReposCount: 0,
                 totalCommitsAllTime: 0,
@@ -41,65 +56,193 @@ export const getDashboardStats = async (req, res) => {
                 activeDaysThisMonth: 0,
                 productivityTrendPercent: 0,
             });
+
         }
 
-        // Total commits all time
-        const [totalCommits] = await pool.query(
-            `SELECT COUNT(*) as count FROM commits WHERE repo_id IN (${repoIds.join(',')})`,
-        );
-        const totalCommitsAllTime = totalCommits[0]?.count || 0;
+        /**
+         * Total tracked repositories
+         */
+        const trackedReposCount = repoIds.length;
 
-        // Commits this week
+        /**
+         * Dynamic placeholders for SQL IN clause
+         */
+        const placeholders = repoIds
+            .map(() => '?')
+            .join(',');
+
+        /**
+         * Total commits all time
+         */
+        const [totalCommitsResult] = await pool.query(
+            `
+            SELECT COUNT(*) as count
+            FROM commits
+            WHERE repo_id IN (${placeholders})
+            `,
+            repoIds
+        );
+
+        const totalCommitsAllTime =
+            totalCommitsResult[0]?.count || 0;
+
+        /**
+         * Commits this week
+         */
         const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        const [weekCommits] = await pool.query(
-            `SELECT COUNT(*) as count FROM commits WHERE repo_id IN (${repoIds.join(',')}) AND committed_at >= ?`,
-            [weekAgo]
-        );
-        const totalCommitsThisWeek = weekCommits[0]?.count || 0;
 
-        // PRs open
-        const [openPRs] = await pool.query(
-            `SELECT COUNT(*) as count FROM pull_requests WHERE repo_id IN (${repoIds.join(',')}) AND state = 'open'`,
+        weekAgo.setDate(
+            weekAgo.getDate() - 7
         );
-        const totalPRsOpen = openPRs[0]?.count || 0;
 
-        // PRs merged all time
-        const [mergedPRs] = await pool.query(
-            `SELECT COUNT(*) as count FROM pull_requests WHERE repo_id IN (${repoIds.join(',')}) AND state = 'closed' AND merged_at IS NOT NULL`,
+        const [weekCommitsResult] = await pool.query(
+            `
+            SELECT COUNT(*) as count
+            FROM commits
+            WHERE repo_id IN (${placeholders})
+            AND committed_at >= ?
+            `,
+            [...repoIds, weekAgo]
         );
-        const totalPRsMergedAllTime = mergedPRs[0]?.count || 0;
 
-        // PRs closed (not merged)
-        const [closedPRs] = await pool.query(
-            `SELECT COUNT(*) as count FROM pull_requests WHERE repo_id IN (${repoIds.join(',')}) AND state = 'closed' AND merged_at IS NULL`,
+        const totalCommitsThisWeek =
+            weekCommitsResult[0]?.count || 0;
+
+        /**
+         * Open pull requests
+         */
+        const [openPRsResult] = await pool.query(
+            `
+            SELECT COUNT(*) as count
+            FROM pull_requests
+            WHERE repo_id IN (${placeholders})
+            AND state = 'open'
+            `,
+            repoIds
         );
-        const totalPRsClosed = closedPRs[0]?.count || 0;
 
-        // Active days this month
+        const totalPRsOpen =
+            openPRsResult[0]?.count || 0;
+
+        /**
+         * Merged pull requests
+         */
+        const [mergedPRsResult] = await pool.query(
+            `
+            SELECT COUNT(*) as count
+            FROM pull_requests
+            WHERE repo_id IN (${placeholders})
+            AND merged_at IS NOT NULL
+            `,
+            repoIds
+        );
+
+        const totalPRsMergedAllTime =
+            mergedPRsResult[0]?.count || 0;
+
+        /**
+         * Closed but unmerged PRs
+         */
+        const [closedPRsResult] = await pool.query(
+            `
+            SELECT COUNT(*) as count
+            FROM pull_requests
+            WHERE repo_id IN (${placeholders})
+            AND state = 'closed'
+            AND merged_at IS NULL
+            `,
+            repoIds
+        );
+
+        const totalPRsClosed =
+            closedPRsResult[0]?.count || 0;
+
+        /**
+         * Active development days this month
+         */
         const monthAgo = new Date();
-        monthAgo.setDate(monthAgo.getDate() - 30);
-        const [activeDays] = await pool.query(
-            `SELECT COUNT(DISTINCT DATE(committed_at)) as count FROM commits WHERE repo_id IN (${repoIds.join(',')}) AND committed_at >= ?`,
-            [monthAgo]
-        );
-        const activeDaysThisMonth = activeDays[0]?.count || 0;
 
-        // Productivity trend: compare this week vs last week
-        const twoWeeksAgo = new Date();
-        twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-        const [lastWeekCommits] = await pool.query(
-            `SELECT COUNT(*) as count FROM commits WHERE repo_id IN (${repoIds.join(',')}) AND committed_at >= ? AND committed_at < ?`,
-            [twoWeeksAgo, weekAgo]
+        monthAgo.setDate(
+            monthAgo.getDate() - 30
         );
-        const lastWeekCount = lastWeekCommits[0]?.count || 0;
+
+        const [activeDaysResult] = await pool.query(
+            `
+            SELECT COUNT(
+                DISTINCT DATE(committed_at)
+            ) as count
+            FROM commits
+            WHERE repo_id IN (${placeholders})
+            AND committed_at >= ?
+            `,
+            [...repoIds, monthAgo]
+        );
+
+        const activeDaysThisMonth =
+            activeDaysResult[0]?.count || 0;
+
+        /**
+         * Productivity trend calculation
+         * Compare this week vs previous week
+         */
+        const twoWeeksAgo = new Date();
+
+        twoWeeksAgo.setDate(
+            twoWeeksAgo.getDate() - 14
+        );
+
+        const [lastWeekResult] = await pool.query(
+            `
+            SELECT COUNT(*) as count
+            FROM commits
+            WHERE repo_id IN (${placeholders})
+            AND committed_at >= ?
+            AND committed_at < ?
+            `,
+            [...repoIds, twoWeeksAgo, weekAgo]
+        );
+
+        const lastWeekCommits =
+            lastWeekResult[0]?.count || 0;
+
+        /**
+         * Better UX-friendly productivity calculation
+         */
         let productivityTrendPercent = 0;
-        if (lastWeekCount > 0) {
-            productivityTrendPercent = Math.round(((totalCommitsThisWeek - lastWeekCount) / lastWeekCount) * 100);
+
+        if (lastWeekCommits > 0) {
+
+            productivityTrendPercent = Math.round(
+                (
+                    (
+                        totalCommitsThisWeek
+                        - lastWeekCommits
+                    )
+                    / lastWeekCommits
+                ) * 100
+            );
+
+            /**
+             * Prevent negative productivity values
+             */
+            productivityTrendPercent = Math.max(
+                0,
+                productivityTrendPercent
+            );
+
         } else if (totalCommitsThisWeek > 0) {
-            productivityTrendPercent = 100; // Previous week had 0, this week has > 0
+
+            productivityTrendPercent = 100;
+
+        } else {
+
+            productivityTrendPercent = 0;
+
         }
 
+        /**
+         * Final analytics response
+         */
         res.json({
             trackedReposCount,
             totalCommitsAllTime,
@@ -112,10 +255,26 @@ export const getDashboardStats = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Failed to fetch dashboard stats:', error);
+
+        console.error(
+            'Dashboard statistics error:',
+            error
+        );
+
+        console.error(
+            error.message
+        );
+
+        console.error(
+            error.stack
+        );
+
         res.status(500).json({
-            error: 'Failed to fetch dashboard statistics',
+            error:
+                'Failed to fetch dashboard statistics',
             details: error.message,
         });
+
     }
+
 };

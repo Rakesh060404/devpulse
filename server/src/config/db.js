@@ -16,9 +16,21 @@ const dbConfig = {
 
 let pool = mysql.createPool(dbConfig);
 
-const tryConnection = async (connectionPool) => {
-    const connection = await connectionPool.getConnection();
-    connection.release();
+const tryConnection = async (connectionPool, retries = 5, delay = 2000) => {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const connection = await connectionPool.getConnection();
+            connection.release();
+            return;
+        } catch (error) {
+            if (i < retries - 1) {
+                console.log(`[DB] Connection attempt ${i + 1}/${retries} failed, retrying in ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+                throw error;
+            }
+        }
+    }
 };
 
 try {

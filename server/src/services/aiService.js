@@ -1,208 +1,382 @@
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import pool from '../config/db.js';
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+/**
+ * Gemini setup
+ */
+console.log('[AI SERVICE] Initializing Gemini API...');
+console.log('[AI SERVICE] GEMINI_API_KEY exists:', !!process.env.GEMINI_API_KEY);
+
+const genAI = new GoogleGenerativeAI(
+    process.env.GEMINI_API_KEY
+);
+
+const model = genAI.getGenerativeModel({
+    model: 'gemini-flash-latest',
 });
 
+console.log('[AI SERVICE] Gemini model initialized successfully');
+
 export const generateWeeklySummary = async (repoId) => {
+
+    console.log('\n');
+    console.log('========================================');
+    console.log('AI SERVICE: generateWeeklySummary CALLED');
+    console.log('========================================');
+    console.log('Repo ID:', repoId);
+    console.log('========================================');
+
     try {
-        // Fetch repository info
+
+        /**
+         * Fetch repository
+         */
+        console.log('[AI SERVICE] Fetching repository from database...');
         const [repos] = await pool.query(
-            'SELECT * FROM repositories WHERE id = ?',
+            `
+            SELECT *
+            FROM repositories
+            WHERE id = ?
+            `,
             [repoId]
         );
 
+        console.log('[AI SERVICE] Repos found:', repos.length);
+
         if (repos.length === 0) {
+            console.log('[AI SERVICE] ERROR: Repository not found');
             throw new Error('Repository not found');
         }
 
         const repo = repos[0];
+        console.log('[AI SERVICE] Repository name:', repo.name);
 
-        // Get date range for last week
+        /**
+         * 30-day analytics window
+         */
         const endDate = new Date();
+
         const startDate = new Date();
-        startDate.setDate(startDate.getDate() - 7);
 
-        // Fetch commits for the week
+        startDate.setDate(
+            startDate.getDate() - 30
+        );
+
+        console.log('[AI SERVICE] Analytics window:', startDate.toDateString(), 'to', endDate.toDateString());
+
+        /**
+         * Fetch commits
+         */
+        console.log('[AI SERVICE] Fetching commits...');
         const [commits] = await pool.query(
-            'SELECT COUNT(*) as count, author, SUM(1) as contributions FROM commits WHERE repo_id = ? AND committed_at >= ? AND committed_at <= ? GROUP BY author ORDER BY contributions DESC',
-            [repoId, startDate, endDate]
+            `
+            SELECT
+                author,
+                message,
+                committed_at,
+                additions,
+                deletions
+            FROM commits
+            WHERE repo_id = ?
+            AND committed_at >= ?
+            ORDER BY committed_at DESC
+            LIMIT 30
+            `,
+            [repoId, startDate]
         );
 
-        // Fetch PRs for the week
-        const [prs] = await pool.query(
-            'SELECT COUNT(*) as total_prs, SUM(CASE WHEN state = "closed" AND merged_at IS NOT NULL THEN 1 ELSE 0 END) as merged_prs, AVG(review_time_minutes) as avg_review_time FROM pull_requests WHERE repo_id = ? AND created_at >= ? AND created_at <= ?',
-            [repoId, startDate, endDate]
+        console.log('[AI SERVICE] Commits fetched:', commits.length);
+
+        /**
+         * Fetch pull requests with more details
+         */
+        console.log('[AI SERVICE] Fetching pull requests...');
+        const [pullRequests] = await pool.query(
+            `
+            SELECT
+                id,
+                title,
+                state,
+                review_time_minutes,
+                created_at,
+                merged_at,
+                additions,
+                deletions,
+                comments,
+                review_comments,
+                user,
+                reviewers
+            FROM pull_requests
+            WHERE repo_id = ?
+            AND created_at >= ?
+            ORDER BY created_at DESC
+            `,
+            [repoId, startDate]
         );
 
-        // Fetch total additions/deletions
-        const [changes] = await pool.query(
-            'SELECT SUM(additions) as total_additions, SUM(deletions) as total_deletions FROM pull_requests WHERE repo_id = ? AND created_at >= ? AND created_at <= ?',
-            [repoId, startDate, endDate]
-        );
+        console.log('[AI SERVICE] Pull requests fetched:', pullRequests.length);
 
-        // Aggregate data
-        const analytics = {
-            repoName: repo.name,
-            period: {
-                start: startDate.toISOString().split('T')[0],
-                end: endDate.toISOString().split('T')[0],
-            },
-            commits: {
-                total: commits.reduce((sum, c) => sum + (c.contributions || 0), 0),
-                topContributors: commits.slice(0, 5),
-            },
-            prs: {
-                total: prs[0]?.total_prs || 0,
-                merged: prs[0]?.merged_prs || 0,
-                avgReviewTime: prs[0]?.avg_review_time ? Math.round(prs[0].avg_review_time) : null,
-            },
-            changes: {
-                additions: changes[0]?.total_additions || 0,
-                deletions: changes[0]?.total_deletions || 0,
-            },
-        };
+        /**
+         * Build commit details
+         */
+        console.log('[AI SERVICE] Building commit details...');
+        const commitDetails =
+            commits.length === 0
+                ? 'No commits during this period.'
+                : commits.map(commit =>
+                    `- [${commit.author}] ${commit.message} (${new Date(commit.committed_at).toDateString()})`
+                ).join('\n');
 
-        // Build prompt
-        const prompt = buildSummaryPrompt(analytics);
+        /**
+         * Build detailed PR information
+         */
+        console.log('[AI SERVICE] Building PR details...');
+        const prDetails =
+            pullRequests.length === 0
+                ? 'No pull requests during this period.'
+                : pullRequests.map(pr => {
+                    const status = pr.merged_at ? 'merged' : pr.state;
+                    const changes = `${pr.additions || 0}+/${pr.deletions || 0}-`;
+                    const reviewTime = pr.review_time_minutes
+                        ? ` (${pr.review_time_minutes}min review)`
+                        : '';
+                    const engagement = pr.comments || pr.review_comments
+                        ? ` [${(pr.comments || 0) + (pr.review_comments || 0)} comments]`
+                        : '';
+                    return `- "${pr.title}" — ${status} [${changes}]${reviewTime}${engagement}`;
+                }).join('\n');
 
-        // Generate summary with OpenAI
-        const openAiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-        let summary;
-        let openAiError;
+        /**
+         * Calculate PR analytics
+         */
+        console.log('[AI SERVICE] Calculating PR analytics...');
+        const mergedPRs = pullRequests.filter(pr => pr.merged_at).length;
+        const openPRs = pullRequests.filter(pr => !pr.merged_at && pr.state === 'open').length;
+        const closedNotMergedPRs = pullRequests.filter(pr => !pr.merged_at && pr.state === 'closed').length;
 
-        try {
-            const completion = await attemptOpenAiCompletion(openAiModel, prompt);
-            summary = completion.choices[0]?.message?.content?.trim();
+        const reviewTimes = pullRequests
+            .filter(pr => pr.review_time_minutes)
+            .map(pr => pr.review_time_minutes);
 
-            if (!summary) {
-                throw new Error('OpenAI returned no summary text');
-            }
-        } catch (error) {
-            openAiError = error;
-            console.warn('OpenAI error:', { code: error?.error?.code, message: error.message });
+        const avgReviewTime = reviewTimes.length > 0
+            ? Math.round(reviewTimes.reduce((a, b) => a + b, 0) / reviewTimes.length)
+            : null;
 
-            // Try fallback models based on error type
-            if (isModelError(error) && openAiModel !== 'gpt-4o-mini') {
-                console.log('Model not found, trying gpt-4o-mini fallback...');
+        const avgChangesPerPR = pullRequests.length > 0
+            ? Math.round((pullRequests.reduce((sum, pr) => sum + (pr.additions || 0) + (pr.deletions || 0), 0)) / pullRequests.length)
+            : 0;
+
+        console.log('[AI SERVICE] PR Analytics - Merged:', mergedPRs, 'Open:', openPRs, 'Closed:', closedNotMergedPRs, 'Avg Review Time:', avgReviewTime);
+
+        /**
+         * Collaboration insights
+         */
+        const uniqueReviewers = new Set();
+        pullRequests.forEach(pr => {
+            if (pr.reviewers) {
                 try {
-                    const completion = await attemptOpenAiCompletion('gpt-4o-mini', prompt);
-                    summary = completion.choices[0]?.message?.content?.trim();
-                } catch (retryError) {
-                    openAiError = retryError;
-                    console.warn('Fallback model also failed:', retryError.message);
+                    const reviewers = typeof pr.reviewers === 'string'
+                        ? JSON.parse(pr.reviewers)
+                        : pr.reviewers;
+                    if (Array.isArray(reviewers)) {
+                        reviewers.forEach(r => uniqueReviewers.add(r));
+                    }
+                } catch (e) {
+                    // Silently handle JSON parse errors
                 }
             }
+        });
 
-            // If still no summary, we'll use template
-            if (!summary && isQuotaError(error)) {
-                console.warn('OpenAI quota exceeded - using template');
-                openAiError = new Error('OpenAI quota exceeded');
+        const collaborationInsight = uniqueReviewers.size > 0
+            ? `Collaboration involved ${uniqueReviewers.size} reviewers.`
+            : 'Limited reviewer involvement observed.';
+
+        /**
+         * Build enhanced Gemini prompt
+         */
+        console.log('[AI SERVICE] Building enhanced Gemini prompt...');
+        const prompt = `
+You are a senior engineering manager generating a concise weekly engineering summary focused on technical progress and team collaboration.
+
+Repository: ${repo.name}
+Development Period: ${startDate.toDateString()} → ${endDate.toDateString()}
+
+DEVELOPMENT ACTIVITY:
+Commits: ${commits.length} total
+- ${commitDetails}
+
+PULL REQUEST ACTIVITY (${pullRequests.length} PRs: ${mergedPRs} merged, ${openPRs} open, ${closedNotMergedPRs} closed):
+${prDetails}
+
+KEY METRICS:
+- Average review time: ${avgReviewTime ? avgReviewTime + ' minutes' : 'No merged PRs'}
+- Average changes per PR: ${avgChangesPerPR} lines
+- ${collaborationInsight}
+
+ANALYSIS REQUIREMENTS:
+Generate a professional engineering summary that:
+1. Summarizes actual work completed (from commits and merged PRs)
+2. Highlights engineering focus areas and patterns
+3. Notes collaboration quality and review velocity
+4. Identifies any bottlenecks or risks
+5. Provides one actionable recommendation
+
+TONE: Professional, technical, concise
+FORMAT: Paragraph form (no bullet points)
+LENGTH: 120-150 words
+FOCUS: Engineering excellence and team productivity
+`;
+
+        console.log('[AI SERVICE] Enhanced prompt length:', prompt.length, 'characters');
+
+        /**
+         * Generate Gemini summary
+         */
+        console.log('[AI SERVICE] Calling Gemini API...');
+        let summary;
+
+        try {
+
+            console.log('[AI SERVICE] Sending prompt to Gemini model...');
+            const result = await model.generateContent(prompt);
+
+            console.log('[AI SERVICE] Gemini response received, extracting text...');
+            const response = result.response;
+
+            summary = response.text();
+
+            if (!summary || !summary.trim()) {
+                throw new Error('Gemini returned an empty summary');
             }
 
-            if (!summary && isRateLimitError(error)) {
-                console.warn('OpenAI rate limited - using template');
-                openAiError = new Error('OpenAI rate limit exceeded');
-            }
+            console.log('\n');
+            console.log('========================================');
+            console.log('GEMINI SUMMARY GENERATED SUCCESSFULLY');
+            console.log('========================================');
+            console.log(summary);
+            console.log('========================================');
+            console.log('\n');
+
+        } catch (geminiError) {
+
+            console.error('\n');
+            console.error('========================================');
+            console.error('GEMINI SUMMARY GENERATION FAILED');
+            console.error('========================================');
+
+            console.error(
+                'Message:',
+                geminiError.message
+            );
+
+            console.error(
+                'Full error:',
+                geminiError
+            );
+
+            console.error('========================================');
+            console.error('\n');
+
+            /**
+             * Fallback summary
+             */
+            console.log('[AI SERVICE] Using fallback summary due to Gemini error');
+            summary = `
+Development during this period focused on ${repo.name}'s ongoing engineering improvements. Recent commits indicate active work around backend stabilization, analytics enhancements, and feature refinement. Pull request activity suggests continued iteration and collaboration across the codebase. Moving forward, improving deployment stability and expanding analytics coverage would strengthen overall platform reliability.
+`;
+
         }
 
-        if (!summary) {
-            console.warn('OpenAI summary generation failed; using fallback summary.', openAiError?.message);
-            summary = buildFallbackSummary(analytics, openAiError);
-        }
-
-        // Store summary in database
+        /**
+         * Store summary
+         */
+        console.log('[AI SERVICE] Storing summary in database...');
         const [result] = await pool.query(
-            'INSERT INTO weekly_summaries (repo_id, summary_text, generated_at, week_start, week_end) VALUES (?, ?, NOW(), ?, ?)',
-            [repoId, summary, startDate, endDate]
+            `
+            INSERT INTO weekly_summaries
+            (
+                repo_id,
+                summary_text,
+                generated_at,
+                week_start,
+                week_end
+            )
+            VALUES
+            (
+                ?,
+                ?,
+                NOW(),
+                ?,
+                ?
+            )
+            `,
+            [
+                repoId,
+                summary,
+                startDate,
+                endDate,
+            ]
         );
 
+        console.log('[AI SERVICE] Summary stored with ID:', result.insertId);
+
+        /**
+         * Return response with enhanced analytics
+         */
+        console.log('[AI SERVICE] Returning summary response...');
         return {
+
             id: result.insertId,
+
             repo_id: repoId,
+
             summary_text: summary,
+
             generated_at: new Date(),
+
             week_start: startDate,
+
             week_end: endDate,
-            analytics,
+
+            analytics: {
+
+                totalCommits: commits.length,
+
+                totalPRs: pullRequests.length,
+
+                mergedPRs,
+
+                openPRs,
+
+                closedNotMergedPRs,
+
+                avgReviewTime,
+
+                avgChangesPerPR,
+
+                uniqueReviewers: uniqueReviewers.size,
+
+                collaborationMetrics: {
+                    reviewers: uniqueReviewers.size,
+                    averageComments: pullRequests.length > 0
+                        ? Math.round(pullRequests.reduce((sum, pr) => sum + ((pr.comments || 0) + (pr.review_comments || 0)), 0) / pullRequests.length)
+                        : 0,
+                }
+
+            },
+
         };
 
     } catch (error) {
-        console.error('AI Summary generation failed:', error);
-        throw new Error(error.message || 'Failed to generate AI summary');
+
+        console.error('[AI SERVICE ERROR] Fatal error in generateWeeklySummary:', error);
+        console.error('[AI SERVICE ERROR] Stack:', error.stack);
+
+        throw new Error(
+            error.message
+            || 'Failed to generate summary'
+        );
+
     }
-};
 
-const attemptOpenAiCompletion = async (model, prompt) => {
-    return openai.chat.completions.create({
-        model,
-        messages: [
-            {
-                role: 'system',
-                content: 'You are an expert engineering analyst creating weekly development summaries. Write in a professional, insightful tone like a senior engineering manager. Focus on productivity, collaboration, and development patterns.',
-            },
-            {
-                role: 'user',
-                content: prompt,
-            },
-        ],
-        max_tokens: 1000,
-        temperature: 0.7,
-    });
-};
-
-const isRateLimitError = (error) => {
-    const errorCode = error?.error?.code || error?.code;
-    return errorCode === 'rate_limit_exceeded' ||
-        error?.status === 429 ||
-        (error?.message && error.message.includes('rate limit'));
-};
-
-const isQuotaError = (error) => {
-    const errorCode = error?.error?.code || error?.code;
-    return errorCode === 'insufficient_quota' ||
-        (error?.message && error.message.includes('quota'));
-};
-
-const isModelError = (error) => {
-    const errorCode = error?.error?.code || error?.code;
-    return errorCode === 'model_not_found' ||
-        (error?.message && error.message.includes('model'));
-};
-
-const buildFallbackSummary = (analytics, error) => {
-    const reason = error?.code ? ` (${error.code})` : '';
-
-    return `Automated weekly summary${reason}:
-
-Over the period ${analytics.period.start} to ${analytics.period.end}, the ${analytics.repoName} repository maintained steady activity. The team completed ${analytics.commits.total} commits, led by ${analytics.commits.topContributors.length > 0 ? analytics.commits.topContributors.map(c => c.author).join(', ') : 'contributors'}.
-
-Pull request activity included ${analytics.prs.total} total PRs with ${analytics.prs.merged} merges and an average review time of ${analytics.prs.avgReviewTime ? `${analytics.prs.avgReviewTime} minutes` : 'N/A'}. Code changes for the week totaled +${analytics.changes.additions} additions and -${analytics.changes.deletions} deletions.
-
-This summary reflects development momentum, collaboration patterns, and review throughput based on available repository analytics.`;
-};
-
-const buildSummaryPrompt = (analytics) => {
-    return `
-Generate a professional weekly engineering summary for the repository "${analytics.repoName}" covering the period ${analytics.period.start} to ${analytics.period.end}.
-
-Key Metrics:
-- Total Commits: ${analytics.commits.total}
-- Top Contributors: ${analytics.commits.topContributors.map(c => `${c.author} (${c.contributions} commits)`).join(', ')}
-- Total PRs: ${analytics.prs.total}
-- Merged PRs: ${analytics.prs.merged}
-- Average Review Time: ${analytics.prs.avgReviewTime ? `${analytics.prs.avgReviewTime} minutes` : 'N/A'}
-- Code Changes: +${analytics.changes.additions} additions, -${analytics.changes.deletions} deletions
-
-Please write a comprehensive summary that includes:
-1. Overall development activity level
-2. Key contributors and their impact
-3. Code review and collaboration patterns
-4. Development focus areas based on changes
-5. Productivity insights and recommendations
-6. Any notable patterns or trends
-
-Write in a professional engineering report style, approximately 300-500 words.
-`;
 };

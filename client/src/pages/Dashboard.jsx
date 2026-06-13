@@ -1,14 +1,30 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, {
+    useState,
+    useEffect,
+    useContext,
+} from 'react';
+
 import { AuthContext } from '../context/AuthContext';
+
 import axios from '../api/axiosInstance';
+
 import Layout from '../components/Layout';
 import RepoCard from '../components/RepoCard';
 import StatsCard from '../components/StatsCard';
 
 const Dashboard = () => {
-    const { user, setUser, logout } = useContext(AuthContext);
+
+    const {
+        user,
+        setUser,
+        logout,
+    } = useContext(AuthContext);
+
     const [repos, setRepos] = useState([]);
-    const [trackedRepos, setTrackedRepos] = useState([]);
+
+    const [trackedRepos, setTrackedRepos] =
+        useState([]);
+
     const [stats, setStats] = useState({
         trackedReposCount: 0,
         totalCommitsAllTime: 0,
@@ -18,225 +34,645 @@ const Dashboard = () => {
         activeDaysThisMonth: 0,
         productivityTrendPercent: 0,
     });
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
 
+    const [loading, setLoading] =
+        useState(true);
+
+    const [error, setError] =
+        useState(null);
+
+    /**
+     * Initial auth + dashboard load
+     */
     useEffect(() => {
-        // Check for token in URL params (from OAuth redirect)
-        const urlParams = new URLSearchParams(window.location.search);
-        const token = urlParams.get('token');
-        if (token) {
-            localStorage.setItem('token', token);
-            // Clean up URL
-            window.history.replaceState({}, document.title, '/dashboard');
-            // Verify and set user
-            verifyToken(token);
-        } else {
-            // Token already in localStorage or missing, proceed with fetching
-            initializeDashboard();
-        }
+
+        const initialize = async () => {
+
+            try {
+
+                const urlParams =
+                    new URLSearchParams(
+                        window.location.search
+                    );
+
+                const token =
+                    urlParams.get('token');
+
+                if (token) {
+
+                    localStorage.setItem(
+                        'token',
+                        token
+                    );
+
+                    window.history.replaceState(
+                        {},
+                        document.title,
+                        '/dashboard'
+                    );
+
+                    await verifyToken(token);
+
+                } else {
+
+                    await initializeDashboard();
+
+                }
+
+            } catch (error) {
+
+                console.error(
+                    'Dashboard initialization failed:',
+                    error
+                );
+
+                setError(
+                    'Failed to initialize dashboard'
+                );
+
+            }
+
+        };
+
+        initialize();
+
     }, []);
 
-    // Set up polling for real-time updates every 30 seconds
+    /**
+     * Auto polling every 30 seconds
+     */
     useEffect(() => {
-        if (loading) return; // Don't poll while initial load is in progress
 
-        const pollInterval = setInterval(() => {
-            fetchStats();
-            fetchTrackedRepos();
-        }, 30000); // 30 seconds
+        if (loading) return;
 
-        return () => clearInterval(pollInterval); // Cleanup on unmount
+        const pollInterval =
+            setInterval(async () => {
+
+                await fetchRepos();
+                await fetchTrackedRepos();
+                await fetchStats();
+
+            }, 30000);
+
+        return () =>
+            clearInterval(pollInterval);
+
     }, [loading]);
 
-    const initializeDashboard = async () => {
-        try {
-            await fetchRepos();
-            await fetchTrackedRepos();
-            await fetchStats();
-        } catch (err) {
-            console.error('Failed to initialize dashboard:', err);
-            setError('Failed to load dashboard data');
-        } finally {
-            setLoading(false);
-        }
-    };
+    /**
+     * Dashboard loader
+     */
+    const initializeDashboard =
+        async () => {
 
+            try {
+
+                await Promise.all([
+                    fetchRepos(),
+                    fetchTrackedRepos(),
+                    fetchStats(),
+                ]);
+
+            } catch (error) {
+
+                console.error(
+                    'Failed to load dashboard:',
+                    error
+                );
+
+                setError(
+                    'Failed to load dashboard'
+                );
+
+            } finally {
+
+                setLoading(false);
+
+            }
+
+        };
+
+    /**
+     * Verify JWT token
+     */
     const verifyToken = async (token) => {
+
         try {
-            const response = await fetch('http://localhost:5000/api/protected', {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
+
+            const response = await fetch(
+                'http://localhost:5000/api/protected',
+                {
+                    headers: {
+                        Authorization:
+                            `Bearer ${token}`,
+                    },
+                }
+            );
 
             if (response.ok) {
-                const data = await response.json();
+
+                const data =
+                    await response.json();
+
                 setUser(data.user);
-                // After user is set, initialize dashboard
-                setTimeout(() => initializeDashboard(), 100);
+
+                await initializeDashboard();
+
             } else {
-                localStorage.removeItem('token');
+
+                localStorage.removeItem(
+                    'token'
+                );
+
                 setLoading(false);
+
             }
+
         } catch (error) {
-            console.error('Token verification failed:', error);
-            localStorage.removeItem('token');
+
+            console.error(
+                'Token verification failed:',
+                error
+            );
+
+            localStorage.removeItem(
+                'token'
+            );
+
             setLoading(false);
+
         }
+
     };
+
+    /**
+     * Fetch GitHub repos
+     */
     const fetchRepos = async () => {
+
         try {
-            const response = await axios.get('/api/repos');
-            setRepos(response.data);
+
+            const response =
+                await axios.get(
+                    '/api/repos'
+                );
+
+            setRepos(
+                response.data || []
+            );
+
         } catch (error) {
-            console.error('Failed to fetch repos:', error);
-            setError('Failed to load repositories');
+
+            console.error(
+                'Failed to fetch repos:',
+                error
+            );
+
         }
+
     };
 
-    const fetchTrackedRepos = async () => {
-        try {
-            const response = await axios.get('/api/repos/tracked');
-            setTrackedRepos(response.data);
-        } catch (error) {
-            console.error('Failed to fetch tracked repos:', error);
-            setError('Failed to load tracked repositories');
-        }
-    };
+    /**
+     * Fetch tracked repositories
+     */
+    const fetchTrackedRepos =
+        async () => {
 
+            try {
+
+                const response =
+                    await axios.get(
+                        '/api/repos/tracked'
+                    );
+
+                setTrackedRepos(
+                    response.data || []
+                );
+
+            } catch (error) {
+
+                console.error(
+                    'Failed to fetch tracked repos:',
+                    error
+                );
+
+            }
+
+        };
+
+    /**
+     * Fetch dashboard statistics
+     */
     const fetchStats = async () => {
+
         try {
-            const response = await axios.get('/api/stats/dashboard');
-            setStats(response.data);
+
+            const response =
+                await axios.get(
+                    '/api/stats/dashboard'
+                );
+
+            setStats(
+                response.data
+            );
+
         } catch (error) {
-            console.error('Failed to fetch stats:', error);
-            setError('Failed to load statistics');
-            // Keep stats as-is (zeros) on error
+
+            console.error(
+                'Failed to fetch stats:',
+                error
+            );
+
         }
+
     };
 
+    /**
+     * Track repository
+     */
     const trackRepo = async (repo) => {
+
         try {
-            await axios.post('/api/repos', {
-                github_repo_id: repo.id,
-                name: repo.name,
-                full_name: repo.full_name,
-                html_url: repo.html_url,
-                description: repo.description,
-            });
-            fetchTrackedRepos();
+
+            await axios.post(
+                '/api/repos',
+                {
+                    github_repo_id:
+                        repo.id,
+
+                    name:
+                        repo.name,
+
+                    full_name:
+                        repo.full_name,
+
+                    html_url:
+                        repo.html_url,
+
+                    description:
+                        repo.description,
+                }
+            );
+
+            await fetchTrackedRepos();
+            await fetchStats();
+
         } catch (error) {
-            console.error('Failed to track repo:', error);
+
+            console.error(
+                'Failed to track repo:',
+                error
+            );
+
         }
+
     };
 
-    const syncCommits = async (repoId) => {
-        try {
-            await axios.post(`/api/commits/sync/${repoId}`);
-            alert('Commits synced successfully!');
-        } catch (error) {
-            console.error('Failed to sync commits:', error);
-        }
-    };
+    /**
+     * Sync commits
+     */
+    const syncCommits =
+        async (repoId) => {
 
+            try {
+
+                await axios.post(
+                    `/api/commits/sync/${repoId}`
+                );
+
+                await fetchStats();
+
+                await fetchTrackedRepos();
+
+                alert(
+                    'Commits synced successfully!'
+                );
+
+            } catch (error) {
+
+                console.error(
+                    'Failed to sync commits:',
+                    error
+                );
+
+                alert(
+                    'Failed to sync commits'
+                );
+
+            }
+
+        };
+
+    /**
+     * Loading UI
+     */
     if (loading) {
+
         return (
-            <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-                <div className="text-white text-xl">Loading dashboard...</div>
+            <div
+                className="
+                min-h-screen
+                bg-gray-900
+                flex
+                items-center
+                justify-center
+            "
+            >
+                <div
+                    className="
+                    text-white
+                    text-xl
+                "
+                >
+                    Loading dashboard...
+                </div>
             </div>
         );
+
     }
 
     return (
+
         <Layout>
+
             <div className="space-y-8">
+
                 {/* Welcome Section */}
+
                 <div>
-                    <h1 className="text-3xl font-bold text-white mb-2">Welcome back, {user?.username || 'Developer'}!</h1>
-                    <p className="text-gray-400">Here's an overview of your development activity</p>
+
+                    <h1
+                        className="
+                        text-3xl
+                        font-bold
+                        text-white
+                        mb-2
+                    "
+                    >
+                        Welcome back,
+                        {' '}
+                        {user?.username || 'Developer'}!
+                    </h1>
+
+                    <p
+                        className="
+                        text-gray-400
+                    "
+                    >
+                        Here's an overview
+                        of your development activity
+                    </p>
+
                 </div>
 
-                {/* Error Message */}
+                {/* Error */}
+
                 {error && (
-                    <div className="bg-red-900 border border-red-700 rounded-lg p-4">
-                        <p className="text-red-100">{error}</p>
+
+                    <div
+                        className="
+                        bg-red-900
+                        border
+                        border-red-700
+                        rounded-lg
+                        p-4
+                    "
+                    >
+                        <p
+                            className="
+                            text-red-100
+                        "
+                        >
+                            {error}
+                        </p>
                     </div>
+
                 )}
 
-                {/* Stats Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {/* Stats */}
+
+                <div
+                    className="
+                    grid
+                    grid-cols-1
+                    md:grid-cols-2
+                    lg:grid-cols-3
+                    xl:grid-cols-4
+                    gap-6
+                "
+                >
+
                     <StatsCard
                         title="Tracked Repos"
-                        value={stats.trackedReposCount.toLocaleString()}
+                        value={
+                            stats?.trackedReposCount
+                                ?.toLocaleString() || '0'
+                        }
                         change={0}
                         icon="📁"
                     />
+
                     <StatsCard
                         title="Total Commits"
-                        value={stats.totalCommitsAllTime.toLocaleString()}
-                        change={Math.round((stats.totalCommitsThisWeek / (stats.totalCommitsAllTime || 1)) * 100)}
+                        value={
+                            stats?.totalCommitsAllTime
+                                ?.toLocaleString() || '0'
+                        }
+                        change={0}
                         icon="💻"
                     />
+
                     <StatsCard
                         title="Active Days"
-                        value={stats.activeDaysThisMonth.toString()}
-                        change={15}
+                        value={
+                            stats?.activeDaysThisMonth
+                                ?.toString() || '0'
+                        }
+                        change={0}
                         icon="📅"
                     />
+
                     <StatsCard
-                        title="Productivity Trend"
-                        value={`${stats.productivityTrendPercent >= 0 ? '+' : ''}${stats.productivityTrendPercent}%`}
-                        change={stats.productivityTrendPercent}
+                        title="Weekly Activity"
+                        value={`${stats?.totalCommitsThisWeek || 0} commits`}
+                        change={0}
                         icon="🚀"
                     />
+
+                    <StatsCard
+                        title="Open PRs"
+                        value={
+                            stats?.totalPRsOpen
+                                ?.toLocaleString() || '0'
+                        }
+                        change={0}
+                        icon="🔄"
+                    />
+
+                    <StatsCard
+                        title="Merged PRs"
+                        value={
+                            stats?.totalPRsMergedAllTime
+                                ?.toLocaleString() || '0'
+                        }
+                        change={0}
+                        icon="✅"
+                    />
+
                 </div>
 
-                {/* GitHub Repositories Section */}
+                {/* GitHub Repositories */}
+
                 <div>
-                    <h2 className="text-2xl font-semibold text-white mb-6">Your GitHub Repositories</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {repos.slice(0, 6).map(repo => (
-                            <RepoCard
-                                key={repo.id}
-                                repo={repo}
-                                onTrack={trackRepo}
-                                isTracked={false} // TODO: check if tracked
-                            />
-                        ))}
-                    </div>
-                </div>
 
-                {/* Tracked Repositories Section */}
-                {trackedRepos.length > 0 && (
-                    <div>
-                        <h2 className="text-2xl font-semibold text-white mb-6">Tracked Repositories</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {trackedRepos.map(repo => (
+                    <h2
+                        className="
+                        text-2xl
+                        font-semibold
+                        text-white
+                        mb-6
+                    "
+                    >
+                        Your GitHub Repositories
+                    </h2>
+
+                    <div
+                        className="
+                        grid
+                        grid-cols-1
+                        md:grid-cols-2
+                        lg:grid-cols-3
+                        gap-6
+                    "
+                    >
+
+                        {repos?.length > 0 ? (
+
+                            repos.map((repo) => (
+
                                 <RepoCard
                                     key={repo.id}
+
                                     repo={repo}
-                                    onSync={syncCommits}
-                                    isTracked={true}
+
+                                    onTrack={trackRepo}
+
+                                    isTracked={
+                                        trackedRepos.some(
+                                            tracked =>
+                                                tracked.github_repo_id
+                                                === repo.id
+                                        )
+                                    }
                                 />
-                            ))}
-                        </div>
+
+                            ))
+
+                        ) : (
+
+                            <div
+                                className="
+                                text-gray-400
+                            "
+                            >
+                                No repositories found.
+                            </div>
+
+                        )}
+
                     </div>
+
+                </div>
+
+                {/* Tracked Repositories */}
+
+                {trackedRepos?.length > 0 && (
+
+                    <div>
+
+                        <h2
+                            className="
+                            text-2xl
+                            font-semibold
+                            text-white
+                            mb-6
+                        "
+                        >
+                            Tracked Repositories
+                        </h2>
+
+                        <div
+                            className="
+                            grid
+                            grid-cols-1
+                            md:grid-cols-2
+                            lg:grid-cols-3
+                            gap-6
+                        "
+                        >
+
+                            {trackedRepos.map(
+                                (repo) => (
+
+                                    <RepoCard
+                                        key={repo.id}
+
+                                        repo={repo}
+
+                                        onSync={syncCommits}
+
+                                        isTracked={true}
+                                    />
+
+                                )
+                            )}
+
+                        </div>
+
+                    </div>
+
                 )}
 
                 {/* Recent Activity */}
-                <div className="bg-gray-800 rounded-lg p-6">
-                    <h2 className="text-2xl font-semibold text-white mb-6">Recent Activity</h2>
-                    <div className="space-y-4">
-                        {/* Placeholder for recent commits */}
-                        <div className="text-gray-400 text-center py-8">
-                            Recent commits will appear here once repositories are tracked and synced.
-                        </div>
+
+                <div
+                    className="
+                    bg-gray-800
+                    rounded-lg
+                    p-6
+                "
+                >
+
+                    <h2
+                        className="
+                        text-2xl
+                        font-semibold
+                        text-white
+                        mb-6
+                    "
+                    >
+                        Recent Activity
+                    </h2>
+
+                    <div
+                        className="
+                        text-gray-400
+                        text-center
+                        py-8
+                    "
+                    >
+                        Recent commits and
+                        pull requests will appear here.
                     </div>
+
                 </div>
+
             </div>
+
         </Layout>
+
     );
+
 };
 
 export default Dashboard;

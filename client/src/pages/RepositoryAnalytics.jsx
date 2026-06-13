@@ -11,14 +11,19 @@ const RepositoryAnalytics = () => {
     const [commits, setCommits] = useState([]);
     const [commitDetails, setCommitDetails] = useState([]);
     const [prs, setPrs] = useState([]);
+    const [prStats, setPRStats] = useState(null);
+    const [weeklyPRStats, setWeeklyPRStats] = useState([]);
     const [summary, setSummary] = useState(null);
     const [generatingSummary, setGeneratingSummary] = useState(false);
+    const [syncingPRs, setSyncingPRs] = useState(false);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         fetchRepoData();
         fetchCommits();
         fetchPRs();
+        fetchPRStats();
+        fetchWeeklyPRStats();
     }, [repoId]);
 
     const fetchRepoData = async () => {
@@ -67,14 +72,60 @@ const RepositoryAnalytics = () => {
         }
     };
 
+    const fetchPRStats = async () => {
+        try {
+            const response = await axios.get(`/api/prs/stats/${repoId}`);
+            setPRStats(response.data);
+        } catch (error) {
+            console.error('Failed to fetch PR stats:', error);
+        }
+    };
+
+    const fetchWeeklyPRStats = async () => {
+        try {
+            const response = await axios.get(`/api/prs/${repoId}/weekly-stats?weeks=12`);
+            // Sort by week_start descending (most recent first) then reverse for chart
+            const sorted = (response.data || [])
+                .sort((a, b) => new Date(b.week_start) - new Date(a.week_start))
+                .reverse();
+            setWeeklyPRStats(sorted);
+        } catch (error) {
+            console.error('Failed to fetch weekly PR stats:', error);
+            setWeeklyPRStats([]);
+        }
+    };
+
+    const syncPRs = async () => {
+        setSyncingPRs(true);
+        try {
+            const response = await axios.post(`/api/prs/sync/${repoId}`);
+            console.log('PR sync result:', response.data);
+            // Refresh PR data after sync
+            await fetchPRs();
+            await fetchPRStats();
+            alert(`Successfully synced ${response.data.syncedCount} PRs!`);
+        } catch (error) {
+            console.error('Failed to sync PRs:', error);
+            alert('Failed to sync PRs: ' + (error.response?.data?.error || error.message));
+        } finally {
+            setSyncingPRs(false);
+        }
+    };
+
     const generateAISummary = async () => {
+        console.log('[FRONTEND] Generate AI Summary button clicked');
+        console.log('[FRONTEND] Repo ID:', repoId);
         setGeneratingSummary(true);
         try {
+            console.log('[FRONTEND] Sending POST request to /api/summaries/generate/' + repoId);
             const response = await axios.post(`/api/summaries/generate/${repoId}`);
-            setSummary(response.data.summary);
+            console.log('[FRONTEND] Response received:', response.data);
+            console.log('[FRONTEND] Summary text:', response.data.summary?.summary_text);
+            setSummary(response.data.summary?.summary_text || response.data.summary);
         } catch (error) {
-            console.error('Failed to generate AI summary:', error);
-            alert('Failed to generate AI summary');
+            console.error('[FRONTEND] Failed to generate AI summary:', error);
+            console.error('[FRONTEND] Error response:', error.response?.data);
+            alert('Failed to generate AI summary: ' + (error.response?.data?.error || error.message));
         }
         setGeneratingSummary(false);
     };
@@ -105,8 +156,14 @@ const RepositoryAnalytics = () => {
                             </div>
                         </div>
                         <div className="flex space-x-3">
+                            <button
+                                onClick={syncPRs}
+                                disabled={syncingPRs}
+                                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors font-medium">
+                                {syncingPRs ? '📡 Syncing PRs...' : '📡 Sync PRs'}
+                            </button>
                             <button className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg transition-colors">
-                                Sync Latest
+                                Sync Commits
                             </button>
                             <button className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors">
                                 View on GitHub
@@ -124,22 +181,22 @@ const RepositoryAnalytics = () => {
                         icon="💻"
                     />
                     <StatsCard
-                        title="Contributors"
-                        value={new Set(prs.map(pr => pr.user)).size.toString()}
-                        change={0}
-                        icon="👥"
-                    />
-                    <StatsCard
                         title="Open PRs"
-                        value={prs.filter(pr => pr.state === 'open').length.toString()}
-                        change={8}
+                        value={prStats?.openPRs?.toString() || '0'}
+                        change={0}
                         icon="🔄"
                     />
                     <StatsCard
                         title="Merged PRs"
-                        value={prs.filter(pr => pr.state === 'closed' && pr.merged_at).length.toString()}
-                        change={-2}
+                        value={prStats?.mergedPRs?.toString() || '0'}
+                        change={0}
                         icon="✅"
+                    />
+                    <StatsCard
+                        title="Avg Review Time"
+                        value={prStats?.avgReviewTimeMinutes ? `${Math.round(prStats.avgReviewTimeMinutes / 60)}h` : 'N/A'}
+                        change={0}
+                        icon="⏱️"
                     />
                 </div>
 
@@ -192,6 +249,125 @@ const RepositoryAnalytics = () => {
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
+
+                    {/* Weekly PR Creation Chart */}
+                    <div className="bg-gray-800 rounded-lg p-6">
+                        <h2 className="text-xl font-semibold text-white mb-6">Weekly PR Creation</h2>
+                        {weeklyPRStats.length === 0 ? (
+                            <div className="h-300 flex items-center justify-center text-gray-400">
+                                No PR data available
+                            </div>
+                        ) : (
+                            <ResponsiveContainer width="100%" height={300}>
+                                <BarChart data={weeklyPRStats}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                                    <XAxis
+                                        dataKey="week_start"
+                                        stroke="#9CA3AF"
+                                        tickFormatter={(date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    />
+                                    <YAxis stroke="#9CA3AF" />
+                                    <Tooltip
+                                        contentStyle={{
+                                            backgroundColor: '#1F2937',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            color: '#F9FAFB'
+                                        }}
+                                        labelFormatter={(date) => new Date(date).toLocaleDateString()}
+                                    />
+                                    <Bar dataKey="prs_created" fill="#8B5CF6" name="Created" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        )}
+                    </div>
+
+                    {/* Weekly PR Merge Chart */}
+                    <div className="bg-gray-800 rounded-lg p-6">
+                        <h2 className="text-xl font-semibold text-white mb-6">Weekly PR Merges</h2>
+                        {weeklyPRStats.length === 0 ? (
+                            <div className="h-300 flex items-center justify-center text-gray-400">
+                                No PR data available
+                            </div>
+                        ) : (
+                            <ResponsiveContainer width="100%" height={300}>
+                                <BarChart data={weeklyPRStats}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                                    <XAxis
+                                        dataKey="week_start"
+                                        stroke="#9CA3AF"
+                                        tickFormatter={(date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    />
+                                    <YAxis stroke="#9CA3AF" />
+                                    <Tooltip
+                                        contentStyle={{
+                                            backgroundColor: '#1F2937',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            color: '#F9FAFB'
+                                        }}
+                                        labelFormatter={(date) => new Date(date).toLocaleDateString()}
+                                    />
+                                    <Bar dataKey="prs_merged" fill="#10B981" name="Merged" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        )}
+                    </div>
+                </div>
+
+                {/* Pull Requests Table */}
+                <div className="bg-gray-800 rounded-lg p-6">
+                    <h2 className="text-xl font-semibold text-white mb-6">Pull Requests ({prs.length})</h2>
+                    {prs.length === 0 ? (
+                        <div className="text-center py-12">
+                            <p className="text-gray-400">No pull requests found. Click "Sync PRs" to fetch from GitHub.</p>
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b border-gray-700">
+                                        <th className="text-left py-3 px-4 font-semibold text-gray-300">Title</th>
+                                        <th className="text-left py-3 px-4 font-semibold text-gray-300">State</th>
+                                        <th className="text-left py-3 px-4 font-semibold text-gray-300">Author</th>
+                                        <th className="text-left py-3 px-4 font-semibold text-gray-300">Created</th>
+                                        <th className="text-left py-3 px-4 font-semibold text-gray-300">Merged</th>
+                                        <th className="text-left py-3 px-4 font-semibold text-gray-300">Review Time</th>
+                                        <th className="text-left py-3 px-4 font-semibold text-gray-300">Changes</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {prs.slice(0, 20).map((pr, idx) => (
+                                        <tr key={pr.id || idx} className="border-b border-gray-700 hover:bg-gray-700 transition-colors">
+                                            <td className="py-3 px-4 text-gray-100 max-w-xs truncate" title={pr.title}>{pr.title}</td>
+                                            <td className="py-3 px-4">
+                                                <span className={`px-2 py-1 rounded text-xs font-medium ${pr.merged_at ? 'bg-purple-900 text-purple-200' :
+                                                    pr.state === 'open' ? 'bg-green-900 text-green-200' :
+                                                        'bg-red-900 text-red-200'
+                                                    }`}>
+                                                    {pr.merged_at ? 'Merged' : pr.state === 'open' ? 'Open' : 'Closed'}
+                                                </span>
+                                            </td>
+                                            <td className="py-3 px-4 text-gray-300">{pr.user || 'N/A'}</td>
+                                            <td className="py-3 px-4 text-gray-400 text-xs">{new Date(pr.created_at).toLocaleDateString()}</td>
+                                            <td className="py-3 px-4 text-gray-400 text-xs">{pr.merged_at ? new Date(pr.merged_at).toLocaleDateString() : '-'}</td>
+                                            <td className="py-3 px-4 text-gray-300">{pr.review_time_minutes ? `${Math.round(pr.review_time_minutes / 60)}h` : '-'}</td>
+                                            <td className="py-3 px-4 text-xs">
+                                                <span className="text-green-400">+{pr.additions || 0}</span>
+                                                <span className="text-gray-400"> / </span>
+                                                <span className="text-red-400">-{pr.deletions || 0}</span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            {prs.length > 20 && (
+                                <div className="text-center py-4 text-gray-400 text-sm">
+                                    Showing 20 of {prs.length} PRs
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* Recent Commits */}

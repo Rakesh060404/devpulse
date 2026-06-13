@@ -46,9 +46,9 @@ export const errorHandler = (err, req, res, next) => {
         response.status = 401;
     }
 
-    // Handle OpenAI errors
+    // Handle Gemini errors
     if (err.code === 'insufficient_quota') {
-        response.error = 'OpenAI quota exceeded. Please try again later.';
+        response.error = 'Gemini quota exceeded. Please try again later.';
         response.status = 429;
     }
 

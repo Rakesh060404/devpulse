@@ -7,6 +7,14 @@ services:
       - ./server:/app
     depends_on:
       - mysql
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: root
+      DB_NAME: devpulse
+      DB_USE_CONTAINER: "true"
+      CLIENT_URL: http://localhost:3000
     command: npm run dev
 
   mysql:

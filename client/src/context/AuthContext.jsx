@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect } from 'react';
+import { API_URL } from '../config';
 
 export const AuthContext = createContext();
 
@@ -19,7 +20,7 @@ export const AuthProvider = ({ children }) => {
     const verifyToken = async (token) => {
         try {
             const response = await fetch(
-                'http://localhost:5000/api/protected',
+                `${API_URL}/api/protected`,
                 {
                     headers: {
                         Authorization: `Bearer ${token}`,

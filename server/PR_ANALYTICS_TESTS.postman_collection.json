@@ -1,0 +1,227 @@
+{
+    "info": {
+        "name": "DevPulse PR Analytics Tests",
+        "description": "Comprehensive tests for PR Analytics endpoints",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "Dashboard Stats",
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{token}}",
+                        "type": "text"
+                    }
+                ],
+                "url": {
+                    "raw": "{{base_url}}/api/stats/dashboard",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "api",
+                        "stats",
+                        "dashboard"
+                    ]
+                },
+                "description": "Get dashboard stats including PR metrics across all tracked repos"
+            },
+            "response": []
+        },
+        {
+            "name": "Sync Repository PRs",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{token}}",
+                        "type": "text"
+                    },
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "url": {
+                    "raw": "{{base_url}}/api/prs/sync/{{repoId}}",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "api",
+                        "prs",
+                        "sync",
+                        "{{repoId}}"
+                    ]
+                },
+                "description": "Sync all PRs from GitHub for a tracked repository (with pagination)"
+            },
+            "response": []
+        },
+        {
+            "name": "Get Repository PRs",
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{token}}",
+                        "type": "text"
+                    }
+                ],
+                "url": {
+                    "raw": "{{base_url}}/api/prs/{{repoId}}",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "api",
+                        "prs",
+                        "{{repoId}}"
+                    ]
+                },
+                "description": "Get all PRs for a repository ordered by created_at DESC"
+            },
+            "response": []
+        },
+        {
+            "name": "Get PR Analytics (Stats Endpoint)",
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{token}}",
+                        "type": "text"
+                    }
+                ],
+                "url": {
+                    "raw": "{{base_url}}/api/prs/stats/{{repoId}}",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "api",
+                        "prs",
+                        "stats",
+                        "{{repoId}}"
+                    ]
+                },
+                "description": "Get PR statistics: total, merged, open, avg review time"
+            },
+            "response": []
+        },
+        {
+            "name": "Get PR Analytics (Legacy Endpoint)",
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{token}}",
+                        "type": "text"
+                    }
+                ],
+                "url": {
+                    "raw": "{{base_url}}/api/prs/analytics/{{repoId}}",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "api",
+                        "prs",
+                        "analytics",
+                        "{{repoId}}"
+                    ]
+                },
+                "description": "Get PR analytics (legacy endpoint - same as stats)"
+            },
+            "response": []
+        },
+        {
+            "name": "Get Weekly PR Stats",
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{token}}",
+                        "type": "text"
+                    }
+                ],
+                "url": {
+                    "raw": "{{base_url}}/api/prs/{{repoId}}/weekly-stats?weeks=12",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "api",
+                        "prs",
+                        "{{repoId}}",
+                        "weekly-stats"
+                    ],
+                    "query": [
+                        {
+                            "key": "weeks",
+                            "value": "12"
+                        }
+                    ]
+                },
+                "description": "Get weekly PR statistics for charts (12 weeks default)"
+            },
+            "response": []
+        },
+        {
+            "name": "Generate AI Summary",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{token}}",
+                        "type": "text"
+                    },
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "url": {
+                    "raw": "{{base_url}}/api/summaries/generate/{{repoId}}",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "api",
+                        "summaries",
+                        "generate",
+                        "{{repoId}}"
+                    ]
+                },
+                "description": "Generate AI engineering summary including PR analytics"
+            },
+            "response": []
+        }
+    ],
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://localhost:5000",
+            "type": "string"
+        },
+        {
+            "key": "token",
+            "value": "your_jwt_token_here",
+            "type": "string"
+        },
+        {
+            "key": "repoId",
+            "value": "1",
+            "type": "string"
+        }
+    ]
+}

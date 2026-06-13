@@ -18,12 +18,28 @@ export const getUserRepos = async (req, res) => {
 
         const user = users[0];
 
-        const repos = await fetchUserRepos(user.access_token);
+        if (!user.access_token) {
+
+            return res.status(401).json({
+                error: "GitHub access token missing. Please login again."
+            });
+
+        }
+
+        const repos = await fetchUserRepos(
+            user.access_token
+        );
 
         res.json(repos);
 
     } catch (error) {
         console.error(error);
+
+        if (error.response?.status === 401) {
+            return res.status(401).json({
+                error: "GitHub access token expired or invalid. Please log out and sign in again.",
+            });
+        }
 
         res.status(500).json({
             error: "Failed to fetch repositories",

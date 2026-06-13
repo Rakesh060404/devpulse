@@ -30,6 +30,13 @@ export const githubCallback = async (req, res) => {
             userId = result.insertId;
         } else {
             userId = existingUsers[0].id;
+
+            await pool.query(
+                `UPDATE users
+                SET access_token = ?, username = ?, email = ?, avatar_url = ?
+                WHERE id = ?`,
+                [accessToken, username, email, avatarUrl, userId]
+            );
         }
 
         // generate JWT

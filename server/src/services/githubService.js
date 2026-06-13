@@ -13,9 +13,13 @@ export const fetchUserRepos = async (accessToken) => {
 
         return response.data;
     } catch (error) {
-        console.error(error);
+        console.error(error.response?.data || error.message);
 
-        throw new Error("Failed to fetch repositories");
+        if (error.response) {
+            error.status = error.response.status;
+        }
+
+        throw error;
     }
 };
 
