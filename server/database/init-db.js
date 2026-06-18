@@ -14,14 +14,13 @@ async function initializeDatabase() {
 
     let connection;
     try {
-        // When running from host machine, connect to Docker MySQL via exposed port
-        const isDocker = process.env.DB_USE_CONTAINER === 'true';
         const dbConfig = {
-            host: isDocker ? process.env.DB_HOST || "localhost" : "127.0.0.1",
-            port: isDocker ? (process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306) : 3307,
+            host: process.env.DB_HOST || "localhost",
+            port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
             user: process.env.DB_USER || "root",
             password: process.env.DB_PASSWORD || "root",
             database: process.env.DB_NAME || "devpulse",
+            ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : undefined,
             multipleStatements: true,
         };
 

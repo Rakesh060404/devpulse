@@ -278,3 +278,77 @@ export const getDashboardStats = async (req, res) => {
     }
 
 };
+
+/**
+ * GET /api/stats/recent-activity
+ * Fetch recent commits and pull requests across all tracked repositories
+ */
+export const getRecentActivity = async (req, res) => {
+    try {
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({
+                error: 'Unauthorized',
+            });
+        }
+
+        const userId = req.user.id;
+
+        // Get tracked repositories
+        const [trackedRepos] = await pool.query(
+            `
+            SELECT id
+            FROM repositories
+            WHERE user_id = ?
+            `,
+            [userId]
+        );
+
+        if (trackedRepos.length === 0) {
+            return res.json({
+                commits: [],
+                prs: []
+            });
+        }
+
+        const repoIds = trackedRepos.map(repo => parseInt(repo.id));
+        const placeholders = repoIds.map(() => '?').join(',');
+
+        // Get 10 most recent commits across tracked repos
+        const [commits] = await pool.query(
+            `
+            SELECT c.sha, c.message, c.author, c.committed_at, r.name as repo_name, r.id as repo_id
+            FROM commits c
+            JOIN repositories r ON c.repo_id = r.id
+            WHERE r.user_id = ?
+            ORDER BY c.committed_at DESC
+            LIMIT 10
+            `,
+            [userId]
+        );
+
+        // Get 10 most recent PRs across tracked repos
+        const [prs] = await pool.query(
+            `
+            SELECT pr.id, pr.github_pr_id, pr.title, pr.state, pr.created_at, pr.merged_at, pr.user, r.name as repo_name, r.id as repo_id
+            FROM pull_requests pr
+            JOIN repositories r ON pr.repo_id = r.id
+            WHERE r.user_id = ?
+            ORDER BY pr.created_at DESC
+            LIMIT 10
+            `,
+            [userId]
+        );
+
+        res.json({
+            commits,
+            prs
+        });
+
+    } catch (error) {
+        console.error('Failed to fetch recent activity:', error);
+        res.status(500).json({
+            error: 'Failed to fetch recent activity',
+            details: error.message
+        });
+    }
+};

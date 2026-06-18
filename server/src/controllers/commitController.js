@@ -35,6 +35,27 @@ export const syncRepoCommits = async (req, res) => {
 
         const accessToken = users[0].access_token;
 
+        // Fetch repo metadata from GitHub and update in DB
+        try {
+            const { fetchRepoMetadata } = await import("../services/githubService.js");
+            const githubRepo = await fetchRepoMetadata(accessToken, owner, repoName);
+            await pool.query(
+                `UPDATE repositories 
+                 SET stargazers_count = ?, forks_count = ?, language = ?, watchers_count = ?, open_issues_count = ?
+                 WHERE id = ?`,
+                [
+                    githubRepo.stargazers_count || 0,
+                    githubRepo.forks_count || 0,
+                    githubRepo.language || null,
+                    githubRepo.watchers_count || 0,
+                    githubRepo.open_issues_count || 0,
+                    repoId
+                ]
+            );
+        } catch (err) {
+            console.warn(`Failed to update metadata during sync: ${err.message}`);
+        }
+
         // Fetch commits (for MVP, fetch first page)
         const commits = await fetchRepoCommits(accessToken, owner, repoName);
 
@@ -89,7 +110,7 @@ export const getRepoCommits = async (req, res) => {
 
         // Get commits for the repository
         const [commits] = await pool.query(
-            "SELECT id, sha, message, author, DATE(committed_at) as date FROM commits WHERE repo_id = ? ORDER BY committed_at DESC LIMIT 100",
+            "SELECT id, sha, message, author, DATE_FORMAT(committed_at, '%Y-%m-%d') as date FROM commits WHERE repo_id = ? ORDER BY committed_at DESC LIMIT 100",
             [repoId]
         );
 

@@ -7,7 +7,7 @@ const StatsCard = ({ title, value, change, icon }) => {
                 <div>
                     <p className="text-gray-400 text-sm">{title}</p>
                     <p className="text-2xl font-bold text-white">{value}</p>
-                    {change && (
+                    {!!change && (
                         <p className={`text-sm ${change > 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {change > 0 ? '+' : ''}{change}% from last week
                         </p>

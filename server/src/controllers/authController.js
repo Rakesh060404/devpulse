@@ -55,7 +55,7 @@ export const githubCallback = async (req, res) => {
         );
 
         // Redirect to frontend with token
-        res.redirect(`http://localhost:3000/dashboard?token=${token}`);
+        res.redirect(`${process.env.CLIENT_URL || "http://localhost:3000"}/dashboard?token=${token}`);
     } catch (error) {
         console.error(error);
 

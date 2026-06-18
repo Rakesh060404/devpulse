@@ -18,6 +18,23 @@ code {
         monospace;
 }
 
+/* Premium scrollbar for the entire application */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #0b0f19; /* main dark background */
+}
+::-webkit-scrollbar-thumb {
+    background: #1f2937; /* gray-800 */
+    border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #374151; /* gray-700 */
+}
+
+
 .repo-card button {
     background-color: #007bff;
     color: white;
@@ -31,3 +48,19 @@ code {
 .repo-card button:hover {
     background-color: #0056b3;
 }
+
+/* Custom premium scrollbar styling */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(31, 41, 55, 0.4); /* dark track background */
+    border-radius: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(156, 163, 175, 0.2); /* thin light grey thumb */
+    border-radius: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(156, 163, 175, 0.4);
+}

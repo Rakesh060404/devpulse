@@ -264,46 +264,35 @@ export const getWeeklyPRStats = async (req, res) => {
             });
         }
 
-        // Get weekly PR creation and merge stats
+        // Get weekly PR creation and merge stats (MySQL/TiDB compatible query)
         const [weeklyStats] = await pool.query(
             `SELECT 
-                DATE_TRUNC(created_at, WEEK) as week_start,
+                DATE_FORMAT(DATE_SUB(created_at, INTERVAL DAYOFWEEK(created_at) - 1 DAY), '%Y-%m-%d') as week_start,
                 COUNT(*) as prs_created,
-                SUM(CASE WHEN merged_at IS NOT NULL AND state = 'closed' THEN 1 ELSE 0 END) as prs_merged
+                SUM(CASE WHEN state = 'closed' AND merged_at IS NOT NULL THEN 1 ELSE 0 END) as prs_merged,
+                AVG(review_time_minutes) as avg_review_time
             FROM pull_requests
             WHERE repo_id = ? 
             AND created_at >= DATE_SUB(NOW(), INTERVAL ? WEEK)
-            GROUP BY DATE_TRUNC(created_at, WEEK)
+            GROUP BY week_start
             ORDER BY week_start DESC`,
             [repoId, weeks]
         );
 
-        // Fallback if DATE_TRUNC is not available
-        if (!weeklyStats || weeklyStats.length === 0) {
-            const [fallbackStats] = await pool.query(
-                `SELECT 
-                    DATE(DATE_SUB(created_at, INTERVAL DAYOFWEEK(created_at) - 1 DAY)) as week_start,
-                    COUNT(*) as prs_created,
-                    SUM(CASE WHEN merged_at IS NOT NULL AND state = 'closed' THEN 1 ELSE 0 END) as prs_merged,
-                    AVG(review_time_minutes) as avg_review_time
-                FROM pull_requests
-                WHERE repo_id = ? 
-                AND created_at >= DATE_SUB(NOW(), INTERVAL ? WEEK)
-                GROUP BY DATE(DATE_SUB(created_at, INTERVAL DAYOFWEEK(created_at) - 1 DAY))
-                ORDER BY week_start DESC`,
-                [repoId, weeks]
-            );
+        const formattedStats = (weeklyStats || []).map(row => ({
+            week_start: row.week_start,
+            prs_created: Number(row.prs_created || 0),
+            prs_merged: Number(row.prs_merged || 0),
+            avg_review_time: row.avg_review_time ? Number(Number(row.avg_review_time).toFixed(2)) : null
+        }));
 
-            return res.json(fallbackStats || []);
-        }
-
-        res.json(weeklyStats || []);
+        res.json(formattedStats);
 
     } catch (error) {
-        console.error(error);
-
+        console.error('Failed to fetch weekly PR stats:', error);
         res.status(500).json({
             error: "Failed to fetch weekly PR stats",
+            details: error.message
         });
     }
 };

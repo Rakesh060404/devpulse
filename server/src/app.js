@@ -28,7 +28,7 @@ console.log('========================================');
 const app = express();
 
 app.use(cors({
-    origin: true, // Allow all origins in dev, or specify origins
+    origin: process.env.CLIENT_URL || 'http://localhost:3000',
     credentials: true,
 }));
 
@@ -46,7 +46,7 @@ app.use(session({
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: false, // set to true if using https
+        secure: process.env.NODE_ENV === 'production',
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }

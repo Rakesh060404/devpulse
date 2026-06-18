@@ -48,26 +48,51 @@ const Repositories = () => {
         }
     };
 
+    const untrackRepo = async (repoId) => {
+        try {
+            await axios.delete(`/api/repos/${repoId}`);
+            fetchTrackedRepos();
+        } catch (error) {
+            console.error('Failed to untrack repo:', error);
+            alert('Failed to untrack repository');
+        }
+    };
+
     if (loading) {
         return (
             <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-                <div className="text-white text-xl">Loading repositories...</div>
+                <div className="text-white text-xl animate-pulse">Loading repositories...</div>
             </div>
         );
     }
 
     return (
         <Layout>
-            <div className="space-y-8">
+            <div className="space-y-8 max-w-7xl mx-auto pb-12">
                 <div>
                     <h1 className="text-3xl font-bold text-white mb-2">Repositories</h1>
                     <p className="text-gray-400">Browse your GitHub repositories and track the ones you want to monitor.</p>
                 </div>
 
                 <div>
+                    <h2 className="text-2xl font-semibold text-white mb-6">Tracked Repositories</h2>
+                    {trackedRepos.length === 0 ? (
+                        <div className="bg-gray-800/40 border border-gray-750 rounded-xl p-8 text-center text-gray-400">
+                            No tracked repositories yet. Track an available repository below to enable syncing and analytics.
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {trackedRepos.map(repo => (
+                                <RepoCard key={repo.id} repo={repo} onUntrack={untrackRepo} isTracked={true} />
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div>
                     <h2 className="text-2xl font-semibold text-white mb-6">Available Repositories</h2>
                     {repos.length === 0 ? (
-                        <div className="text-gray-400">No repositories found.</div>
+                        <div className="text-gray-400">No repositories found on your GitHub account.</div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {repos.map(repo => (
@@ -77,19 +102,6 @@ const Repositories = () => {
                                     onTrack={trackRepo}
                                     isTracked={trackedRepos.some(t => t.github_repo_id === repo.id)}
                                 />
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-                <div>
-                    <h2 className="text-2xl font-semibold text-white mb-6">Tracked Repositories</h2>
-                    {trackedRepos.length === 0 ? (
-                        <div className="text-gray-400">No tracked repositories yet. Track a repo to enable sync and analytics.</div>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {trackedRepos.map(repo => (
-                                <RepoCard key={repo.id} repo={repo} isTracked={true} />
                             ))}
                         </div>
                     )}

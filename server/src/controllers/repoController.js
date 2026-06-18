@@ -70,10 +70,57 @@ export const addTrackedRepo = async (req, res) => {
             });
         }
 
+        // Fetch user access token to get repository metadata from GitHub
+        const [users] = await pool.query(
+            "SELECT access_token FROM users WHERE id = ?",
+            [userId]
+        );
+
+        if (users.length === 0) {
+            return res.status(404).json({
+                error: "User not found",
+            });
+        }
+
+        const accessToken = users[0].access_token;
+        const [owner, repoName] = full_name.split('/');
+
+        let stargazers_count = 0;
+        let forks_count = 0;
+        let language = null;
+        let watchers_count = 0;
+        let open_issues_count = 0;
+
+        try {
+            const { fetchRepoMetadata } = await import("../services/githubService.js");
+            const githubRepo = await fetchRepoMetadata(accessToken, owner, repoName);
+            stargazers_count = githubRepo.stargazers_count || 0;
+            forks_count = githubRepo.forks_count || 0;
+            language = githubRepo.language || null;
+            watchers_count = githubRepo.watchers_count || 0;
+            open_issues_count = githubRepo.open_issues_count || 0;
+        } catch (err) {
+            console.warn(`Failed to fetch metadata during track: ${err.message}`);
+        }
+
         // Insert new tracked repo
         const [result] = await pool.query(
-            "INSERT INTO repositories (user_id, github_repo_id, name, full_name, html_url, description) VALUES (?, ?, ?, ?, ?, ?)",
-            [userId, github_repo_id, name, full_name, html_url || null, description || null]
+            `INSERT INTO repositories 
+             (user_id, github_repo_id, name, full_name, html_url, description, stargazers_count, forks_count, language, watchers_count, open_issues_count) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                userId, 
+                github_repo_id, 
+                name, 
+                full_name, 
+                html_url || null, 
+                description || null,
+                stargazers_count,
+                forks_count,
+                language,
+                watchers_count,
+                open_issues_count
+            ]
         );
 
         res.status(201).json({
@@ -133,7 +180,11 @@ export const getRepo = async (req, res) => {
 
         // Check if repo is tracked by user
         const [repos] = await pool.query(
-            "SELECT id, github_repo_id, name, full_name, html_url, description FROM repositories WHERE id = ? AND user_id = ?",
+            `SELECT id, github_repo_id, name, full_name, html_url, description, 
+                    stargazers_count, forks_count, language, watchers_count, open_issues_count, 
+                    created_at, tracked_at, updated_at 
+             FROM repositories 
+             WHERE id = ? AND user_id = ?`,
             [repoId, userId]
         );
 
@@ -194,7 +245,11 @@ export const getTrackedRepos = async (req, res) => {
         const userId = req.user.id;
 
         const [repos] = await pool.query(
-            "SELECT id, github_repo_id, name, full_name, html_url, description FROM repositories WHERE user_id = ?",
+            `SELECT id, github_repo_id, name, full_name, html_url, description, 
+                    stargazers_count, forks_count, language, watchers_count, open_issues_count, 
+                    created_at, tracked_at, updated_at 
+             FROM repositories 
+             WHERE user_id = ?`,
             [userId]
         );
 
